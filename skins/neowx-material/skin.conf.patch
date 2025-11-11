@@ -1,0 +1,21 @@
+[Extras]
+  [[Header]]
+    description = Wetterstation der Sternwarte Schönberg
+    keywords = weather,weewx,schönberg,wetter,sternwarte,gsp
+
+  [[Footer]]
+    name = Wetterstation der GSP Schönberg
+    show_telemetry = no
+    link1_label = GSP Schönberg
+    link1_url = https://www.gsp-schoenberg.de
+    link2_label =
+    link2_url =
+    imprint_label = Impressum
+    imprint_url = https://gsp-schoenberg.de/impressum/
+    privacy_label = Datenschutzerklärung
+    privacy_url = https://gsp-schoenberg.de/datenschutz/
+
+  [[Appearance]]
+    values_order = outTemp, outHumidity, barometer, windSpeed, windrun, rain, snowDepth, dewpoint, inTemp, inHumidity, UV, ET, radiation, appTemp, cloudbase, extraTemp1, extraHumid1, extraTemp2, extraHumid2, extraTemp3, extraHumid3, extraTemp4, extraHumid4, extraTemp5, extraHumid5, extraTemp6, extraHumid6, extraTemp7, extraHumid7, extraTemp8, extraHumid8, lightning_strike_count, lightning_noise_count, lightning_disturber_count, lightning_distance, lightning_energy, pm2_5, co2, temperatureThresholdDaysdy
+    charts_order = outTemp, outHumidity, barometer, rain, snowDepth, windSpeed, windDir, windvec, windrun, UV, ET, radiation, inTemp, inHumidity, appTemp, cloudbase, extraTemp1, extraHumid1, extraTemp2, extraHumid2, extraTemp3, extraHumid3, extraTemp4, extraHumid4, extraTemp5, extraHumid5, extraTemp6, extraHumid6, extraTemp7, extraHumid7, extraTemp8, extraHumid8, lightning_strike_count, lightning_noise_count, lightning_disturber_count, lightning_distance, lightning_energy, pm2_5, co2
+
