@@ -6,10 +6,10 @@
   [[Footer]]
     name = Wetterstation der GSP Schönberg
     show_telemetry = no
-    link1_label = GSP Schönberg
-    link1_url = https://www.gsp-schoenberg.de
-    link2_label =
-    link2_url =
+    link1_label = GSP Sternwarte
+    link1_url = https://www.gsp-sternwarte.de
+    link2_label = GSP Schönberg
+    link2_url = https://www.gsp-schoenberg.de
     imprint_label = Impressum
     imprint_url = https://gsp-schoenberg.de/impressum/
     privacy_label = Datenschutzerklärung
