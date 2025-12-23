@@ -343,13 +343,13 @@
 #def getChartData($name, $column)
     #for $record in $year.days
         #try
-        #set val = $getattr($record, $name)
-        #set data = $getattr($val, $column).format(add_label=False, localize=False, None_string="null")
-        [$record.start.raw, $data],
+            #set val = $getattr($record, $name)
+            #set data = $getattr($val, $column).format(add_label=False, localize=False, None_string="null")
+            [$record.start.raw, $data],
         #except
 
-    #end try
-#end for
+        #end try
+    #end for
 #end def
 
 ## +-------------------------------------------------------------------------+
@@ -782,7 +782,7 @@
 
     // Lightning
     #if $year.lightning_strike_count.has_data
-        $getChartJsCode("lightning_strike_count", "lightning_strike_countchart", "bar", "lightning_strike_count")
+        $getChartJsCode("lightning_strike_count", "lightning_strike_countchart", "bar", "lightning_strike_count", "", "sum")
     #end if
 
     #if $year.lightning_noise_count.has_data
