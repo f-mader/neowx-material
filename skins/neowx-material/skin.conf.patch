@@ -1,3 +1,5 @@
+[Generators]
+    generator_list = weewx.reportengine.CopyGenerator, user.neowx_archive.NeowxArchiveGenerator
 [Extras]
   [[Header]]
     description = Wetterstation der Sternwarte Schönberg
