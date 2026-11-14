@@ -3,128 +3,71 @@
 ## |    telemetry.html.tmpl            Template file for "telemetry" page    |
 ## +-------------------------------------------------------------------------+
 
-## +-------------------------------------------------------------------------+
-## | Template for display card of telemetry values                           |
-## +-------------------------------------------------------------------------+
+#attr $page = 'telemetry'
+#attr $subpage = 'telemetry'
 
-#def valuesCard($name)
-    #if $getVar('day.' + name + '.has_data') and ($getVar('day.' + name + '.max.raw') > 0 or $Extras.Telemetry.allow_zero_values == "yes")
-        <div class="col-12 col-lg-6 mb-4">
-            <div class="card">
-                <div class="card-body text-center">
-                    <h5 class="h5-responsive $Extras.color-text">$getVar('obs.label.' + name)</h5>
+#def renderTeleSegment($seg, $panel_idx, $kind)
+    ## Mirrors the render guard in batteryCard()/chartCard() so a panel whose
+    ## items all lack data is hidden instead of drawing an empty box.
+    #set $vis_items = []
+    #for $x in $seg['items']
+        #if $isEmbeddedItem($x)
+            #silent $vis_items.append($x)
+        #else if $getVar('day.' + $x + '.has_data') and ($getVar('day.' + $x + '.max.raw') > 0 or $Extras.Telemetry.allow_zero_values == "yes")
+            #silent $vis_items.append($x)
+        #end if
+    #end for
 
-                    <div class="row">
-                        <div class="col-3 text-muted font-small lo-text">
-                            #set min_val = $getVar('day.' + name + '.min')
-                            #set min_mapped = $mapBatteryValue($name, $min_val)
-                            $min_mapped <br>
-                            ($getVar('day.' + name + '.mintime').format($Extras.Formatting.datetime_today))
-                        </div>
+    ## $kind is this page's segment kind ('value' | 'chart') and names the
+    ## panel ids; the include's contract is 'card' | 'chart' | 'js'.
+    #set $mode = 'card' if $kind == 'value' else $kind
 
-                        <div class="col-6">
-                            #set current_value = $getVar('current.' + name)
-                            #set display_value = $mapBatteryValue($name, $current_value)
-                            <h4 class="h2-responsive">$display_value</h4>
-                        </div>
-
-                        <div class="col-3 text-muted font-small hi-text">
-                            #set max_val = $getVar('day.' + name + '.max')
-                            #set max_mapped = $mapBatteryValue($name, $max_val)
-                            $max_mapped <br>
-                            ($getVar('day.' + name + '.maxtime').format($Extras.Formatting.datetime_today))
-                        </div>
-
-                        <div class="col-12 mt-4">
-                            <div id="$name-chart"></div>
+    #if $seg['type'] is None
+        #for $x in $seg['items']
+            #if $isEmbeddedItem($x)
+                #set global $emb_item     = $x
+                #set global $emb_section  = $seg['slug']
+                #include "inc/embedded_region.inc"
+                #set global $emb_item     = None
+            #else
+                #set global $tele_mode    = $mode
+                #set global $tele_item    = $x
+                #set global $tele_section = $seg['slug']
+                #include "inc/telemetry.inc"
+            #end if
+        #end for
+    #else if len($vis_items) > 0
+        #set $p_exp   = ($seg['type'] != 'collapsed')
+        #set $p_show  = ' show' if $p_exp else ''
+        #set $p_id    = 'nwm-tele-' + $kind + '-panel-' + str($panel_idx)
+        <div class="col-12 mb-3">
+            <div class="card nwm-expansion-panel" data-section="$seg['slug']">
+                #set global $panel_title = $seg['title']
+                #set global $panel_id    = $p_id
+                #set global $panel_type  = $seg['type']
+                #include "inc/panel_header.inc"
+                <div id="${p_id}" class="collapse${p_show}">
+                    <div class="nwm-panel-body">
+                        <div class="row">
+                            #for $x in $seg['items']
+                                #if $isEmbeddedItem($x)
+                                    #set global $emb_item     = $x
+                                    #set global $emb_section  = $seg['slug']
+                                    #include "inc/embedded_region.inc"
+                                    #set global $emb_item     = None
+                                #else
+                                    #set global $tele_mode    = $mode
+                                    #set global $tele_item    = $x
+                                    #set global $tele_section = $seg['slug']
+                                    #include "inc/telemetry.inc"
+                                #end if
+                            #end for
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     #end if
-#end def
-
-## +-------------------------------------------------------------------------+
-## | Check if a battery field is enabled                                     |
-## +-------------------------------------------------------------------------+
-#def isBatteryFieldEnabled($name)
-    #try
-        #set enabled = $getVar('Extras.Telemetry.BatteryFields.' + $name + '.enabled', 'no')
-        #if $enabled == 'yes'
-            #return True
-        #else
-            #return False
-        #end if
-    #except
-        #return False
-    #end try
-#end def
-
-## +-------------------------------------------------------------------------+
-## | Helper function to map battery values                                   |
-## +-------------------------------------------------------------------------+
-#def mapBatteryValue($name, $value)
-    #if not $isBatteryFieldEnabled($name)
-        #return $value
-    #end if
-
-    #try
-        #set raw_val = str($value).strip()
-        #set key = "0"
-        #if raw_val.replace(".", "").replace("-", "").isdigit()
-            #set key = str(int(float(raw_val) + 0.000001))
-        #end if
-
-        #set mapped = $getVar('Extras.Telemetry.BatteryFields.' + $name + '.' + $key, None)
-        #if $mapped is not None
-            #return $mapped
-        #else
-            #return $value
-        #end if
-    #except
-        #return $value
-    #end try
-#end def
-
-## +-------------------------------------------------------------------------+
-## | Helper function to get chart value for battery fields                   |
-## | Returns the numeric chart position based on mapping order               |
-## +-------------------------------------------------------------------------+
-#def getBatteryChartValue($name, $raw_value)
-    #if not $isBatteryFieldEnabled($name)
-        #return $raw_value
-    #end if
-
-    #try
-        #set key = str(int(float($raw_value) + 0.000001))
-
-        ## Check if flip is enabled for this specific field
-        #set flip = False
-        #try
-            #if $getVar('Extras.Telemetry.BatteryFields.' + $name + '.flip_values', 'no') == 'yes'
-                #set flip = True
-            #end if
-        #except
-            #pass
-        #end try
-
-        ## Get chart position based on key
-        #set chart_pos = $getVar('Extras.Telemetry.BatteryFields.' + $name + '.chart_position_' + $key, None)
-        #if $chart_pos is not None
-            #if $flip
-                ## Invert the position if flip is enabled
-                #set max_pos = int($getVar('Extras.Telemetry.BatteryFields.' + $name + '.max_chart_position', '1'))
-                #set chart_pos = str($max_pos - int($chart_pos))
-            #end if
-            #return $chart_pos
-        #else
-            ## Fallback: use the key itself as position
-            #return $key
-        #end if
-    #except
-        #return $raw_value
-    #end try
 #end def
 
 ## +-------------------------------------------------------------------------+
@@ -135,162 +78,87 @@
 <html lang="$lang">
     <head>
         <title>$gettext("telemetry") | $station.location</title>
-        #include "head.inc"
+        #include "inc/head.inc"
     </head>
     <body class="${Extras.Appearance.mode}-theme main-bg" ontouchstart="">
 
         #attr $active_nav = ''
-        #include "header.inc"
+        #include "inc/header.inc"
 
+        #set global $card_scope = $page
+        #set global $card_default = $Extras.Formatting.datetime_today
+        #include "inc/card_datetime.inc"
+
+        ## Resolve the page tick spec once (tick_style_telemetry -> tick_style ->
+        ## auto). All telemetry charts share the same span (Telemetry.chart_days,
+        ## 30 in the shipped config; 1 if unset). Snap the start to midnight so the
+        ## day-tier ticks land on midnight (not the current time-of-day).
+        #set global $_tel_chart_days = 1
+        #try
+            #set global $_tel_chart_days = int($getVar('Extras.Telemetry.chart_days', '1'))
+        #except
+            #set global $_tel_chart_days = 1
+        #end try
+        #set global $align_start = $span($day_delta=$_tel_chart_days, $boundary='midnight').start.raw
+        #set global $align_stop = $current.dateTime.raw
+        #include "inc/graph_align_setup.inc"
         <main>
-            <div class="container">
+            <div class="container-fluid">
+
                 <div class="row my-4 align-content-start">
 
                     <div class="col-12 mb-4 text-center">
                         <h2 class="h2-responsive text-dark">$gettext("telemetry")</h2>
                     </div>
 
-                    #for $x in $Extras.Appearance.telemetry_order
-                        $valuesCard($x)
+                    #set $tele_layout = $panelLayout(page=$page, subpage=$subpage)
+                    #set $tele_panel_idx = 0
+                    #for $band in $tele_layout
+                        #if $band['type'] == 'columns'
+                            <div class="col-12">
+                                <div class="row align-content-start nwm-desktop-cols-$band['count']">
+                                    #for $col in $band['columns']
+                                        <div class="col-12 nwm-layout-col" data-column="$col['index']">
+                                            <div class="row align-content-start">
+                                                #for $seg_i, $seg in $enumerate($col['segments'])
+                                                    #if $seg['type'] is not None
+                                                        #set $tele_panel_idx = $tele_panel_idx + 1
+                                                    #end if
+                                                    #if $seg_i > 0
+                                                        <div class="col-12"></div>
+                                                    #end if
+                                                    #set $kind = 'chart' if $seg['content'] in ('chart', 'telemetry_chart') else 'value'
+                                                    $renderTeleSegment($seg, $tele_panel_idx, $kind)
+                                                #end for
+                                            </div>
+                                        </div>
+                                    #end for
+                                </div>
+                            </div>
+                        #else
+                            <div class="col-12 nwm-layout-full">
+                                <div class="row align-content-start">
+                                    #for $seg_i, $seg in $enumerate($band['segments'])
+                                        #if $seg['type'] is not None
+                                            #set $tele_panel_idx = $tele_panel_idx + 1
+                                        #end if
+                                        #if $seg_i > 0
+                                            <div class="col-12"></div>
+                                        #end if
+                                        #set $kind = 'chart' if $seg['content'] in ('chart', 'telemetry_chart') else 'value'
+                                        $renderTeleSegment($seg, $tele_panel_idx, $kind)
+                                    #end for
+                                </div>
+                            </div>
+                        #end if
                     #end for
 
                 </div>
             </div>
         </main>
 
-        #include "footer.inc"
-        #include "js.inc"
-
-        ## +-------------------------------------------------------------------------+
-        ## | Chart generation methods (get data for charts + their JS code)          |
-        ## +-------------------------------------------------------------------------+
-
-        ## +-------------------------------------------------------------------------+
-        ## | Get data array for a chart                                              |
-        ## |                                                                         |
-        ## | string  $name    the name of the database field  (e.g. outTemp)         |
-        ## | string  $column  the column of the display value (e.g. min, max, avg)   |
-        ## +-------------------------------------------------------------------------+
-
-        #def getChartData($name, $column)
-            ## Get chart timespan (default to current_timespan if not specified)
-            #set chart_days = 1
-            #try
-                #set chart_days = int($getVar('Extras.Telemetry.chart_days', '1'))
-            #except
-                #set chart_days = 1
-            #end try
-
-            #set current_interval = int($Extras.Charts.current_timespan)
-
-            ## Check if this is an enabled battery field
-            #set is_battery = $isBatteryFieldEnabled($name)
-
-            #for $record in $span($day_delta=$chart_days).spans(interval=current_interval)
-                #try
-                    #set val = $getattr($record, $name)
-                    #set data = $getattr($val, $column).format(add_label=False, localize=False, None_string="null")
-
-                    ## For battery fields, get the chart position value
-                    #if $is_battery and $data != "null"
-                        #set data = $getBatteryChartValue($name, $data)
-                    #end if
-
-                    [$record.start.raw, $data],
-                #except
-
-                #end try
-            #end for
-        #end def
-
-        ## +-------------------------------------------------------------------------+
-        ## | Get JavaScript code for a chart                                         |
-        ## |                                                                         |
-        ## | string  $name     the name of the database field   (e.g. outTemp)       |
-        ## | string  $series   field name for series            (e.g. outTemp)       |
-        ## | string  $column   the column of the display value  (e.g. min, max, avg) |
-        ## +-------------------------------------------------------------------------+
-
-        #def getChartJsCode($name, $series, $column = "avg")
-
-            #if $getVar('day.' + name + '.has_data') and ($getVar('day.' + name + '.max.raw') > 0 or $Extras.Telemetry.allow_zero_values == "yes")
-
-                ## Check if this is an enabled battery field for custom Y-axis
-                #set is_battery = $isBatteryFieldEnabled($name)
-
-                new ApexCharts(document.querySelector('#$name-chart'), {
-                    ...graph_area_config,
-                    yaxis: {
-                        #if $is_battery
-                            #try
-                                #set max_pos = int($getVar('Extras.Telemetry.BatteryFields.' + $name + '.max_chart_position', '1'))
-                            #except
-                                #set max_pos = 1
-                            #end try
-                            min: 0,
-                            max: $max_pos,
-                            tickAmount: $max_pos,
-                            labels: {
-                                formatter: function (val) {
-                                    ## Generate label mapping from config for this specific field
-                                    #set flip = False
-                                    #try
-                                        #if $getVar('Extras.Telemetry.BatteryFields.' + $name + '.flip_values', 'no') == 'yes'
-                                            #set flip = True
-                                        #end if
-                                    #except
-                                        #pass
-                                    #end try
-
-                                    #for $i in range($max_pos + 1)
-                                        #set pos = $i
-                                        #if $flip
-                                            #set pos = $max_pos - $i
-                                        #end if
-                                        #set label_key = None
-                                        ## Find which key maps to this position
-                                        #for $j in range(10)
-                                            #try
-                                                #set check_pos = $getVar('Extras.Telemetry.BatteryFields.' + $name + '.chart_position_' + str($j), None)
-                                                #if $check_pos is not None and int($check_pos) == $pos
-                                                    #set label_key = str($j)
-                                                    #break
-                                                #end if
-                                            #except
-                                                #pass
-                                            #end try
-                                        #end for
-                                        #if $label_key is not None
-                                            #try
-                                                #set label_text = $getVar('Extras.Telemetry.BatteryFields.' + $name + '.' + $label_key, $label_key)
-                                            #except
-                                                #set label_text = $label_key
-                                            #end try
-                                            if (val === $i) return "$label_text";
-                                        #end if
-                                    #end for
-                                    return val;
-                                }
-                            }
-                        #else
-                            labels: {
-                                formatter: function (val) {
-                                    return formatNumber(val, "$getVar('unit.format.' + name)") + "$getVar('unit.label.' + name)";
-                                }
-                            }
-                        #end if
-                    },
-                    series: [
-                        {
-                            name: "$getVar('obs.label.' + series)",
-                            data: [ $getChartData(series, column) ]
-                        }
-                    ]
-                }).render()
-
-            #end if
-
-        #end def
+        #include "inc/footer.inc"
+        #include "inc/js.inc"
 
         ## +-------------------------------------------------------------------------+
         ## | Chart definitions                                                       |
@@ -300,12 +168,12 @@
             // Config templates
 
             var graph_area_config = {
-                #include "graph_area_config.inc"
+                #include "inc/graph_area_config.inc"
             }
 
-            #for $x in $Extras.Appearance.telemetry_order
-                $getChartJsCode($x, $x)
-            #end for
+            #set global $tele_mode        = 'js'
+            #set global $tele_chart_items = [x for x in $panelItems('telemetry_chart', page=$page, subpage=$subpage) if not $isEmbeddedItem(x)]
+            #include "inc/telemetry.inc"
         </script>
 
     </body>

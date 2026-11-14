@@ -20,7 +20,15 @@
     # IMPORTANT, READ BEFORE ENABLING FORECAST:
     # After installing skin you need to restart weewx service to make it work
 
-    # To enable forecast add lowercase "forecast" without quotes to the values_order list above in the [[Appearance]] section
+    # To enable forecast add lowercase "forecast" without quotes to the items of
+    # a card section in [[Appearance]] [[[sections]]]
+
+    # Coordinate override (optional)
+    # By default, coordinates from weewx.conf [Station] section are used
+    # If you want to use different coordinates for the forecast, specify them here
+    # Leave empty to use station coordinates from weewx.conf
+    latitude =
+    longitude =
 
     # Timezone from list of database time zones, or auto will determine timezone from station coordinates
     timezone = auto
@@ -61,6 +69,7 @@
 import time
 from datetime import datetime, timedelta
 import json
+import html
 import hashlib
 import urllib.request
 import urllib.parse
@@ -68,9 +77,13 @@ import logging
 from collections import Counter
 
 from weewx.cheetahgenerator import SearchList
+
+# Layout lives in [[[sections]]], so "forecast" is not a bare element of any
+# list any more - ask the parser the same way the templates do.
+from user.panelorder import order_items
 from weewx.units import ValueHelper, ValueTuple
 
-VERSION = "1.0.5"
+VERSION = "1.0.8"
 
 log = logging.getLogger(__name__)
 
@@ -124,27 +137,57 @@ weather_weights = {
     99: 3,
 }
 
+
 class Forecast(SearchList):
 
     def __init__(self, generator):
         SearchList.__init__(self, generator)
         log.info("version: %s" % VERSION)
-        self.latitude = self.generator.stn_info.latitude_f
-        self.longitude = self.generator.stn_info.longitude_f
-        self.base_url = "https://api.open-meteo.com/v1/forecast"
+
+        # Get forecast configuration
         self.forecast_dict = generator.skin_dict.get("Extras", {}).get("Forecast", {})
-        self.values_order = (
-            generator.skin_dict.get("Extras", {})
-            .get("Appearance", {})
-            .get("values_order", [])
-        )
+
+        # Get coordinates: try skin.conf first, fallback to weewx.conf station info
+        skin_latitude = self.forecast_dict.get("latitude", "")
+        skin_longitude = self.forecast_dict.get("longitude", "")
+
+        # Use skin.conf coordinates if provided and valid, otherwise use station info
+        if skin_latitude and skin_longitude:
+            try:
+                self.latitude = float(skin_latitude)
+                self.longitude = float(skin_longitude)
+                log.info(
+                    "Using coordinates from skin.conf: lat=%s, lon=%s"
+                    % (self.latitude, self.longitude)
+                )
+            except (ValueError, TypeError):
+                log.info(
+                    "Invalid coordinates in skin.conf, falling back to station coordinates"
+                )
+                self.latitude = self.generator.stn_info.latitude_f
+                self.longitude = self.generator.stn_info.longitude_f
+                log.info(
+                    "Using station coordinates from weewx.conf: lat=%s, lon=%s"
+                    % (self.latitude, self.longitude)
+                )
+        else:
+            self.latitude = self.generator.stn_info.latitude_f
+            self.longitude = self.generator.stn_info.longitude_f
+            log.info(
+                "Using station coordinates from weewx.conf: lat=%s, lon=%s"
+                % (self.latitude, self.longitude)
+            )
+
+        self.base_url = "https://api.open-meteo.com/v1/forecast"
         self.generator = generator
 
     def forecast(self):
 
-        enabled = False
-        if "forecast" in self.values_order:
-            enabled = True
+        # No page argument here on purpose: this is the fetch gate, not a
+        # render call, and it must stay page-independent. The forecast being
+        # hidden on one page's [[[pages]]] list must not stop the data from
+        # being fetched for another page that still shows it.
+        enabled = "forecast" in order_items(self.generator.skin_dict, "card")
 
         if enabled != True:
             log.debug("Forecast is disabled")
@@ -168,9 +211,7 @@ class Forecast(SearchList):
             )
             days = 3
 
-        hourly_icons_interval_str = self.forecast_dict.get(
-            "hourly_icons_interval", "1"
-        )
+        hourly_icons_interval_str = self.forecast_dict.get("hourly_icons_interval", "1")
         hourly_icons_interval = 1
         try:
             hourly_icons_interval = int(hourly_icons_interval_str)
@@ -180,7 +221,7 @@ class Forecast(SearchList):
                 hourly_icons_interval_str,
             )
             hourly_icons_interval = 1
-        
+
         if hourly_icons_interval not in [1, 3, 6]:
             log.info(
                 "Parameter hourly_icons_interval with value '%s' is not valid, 1 will be used as fallback.",
@@ -192,7 +233,10 @@ class Forecast(SearchList):
             "apply_weather_code_weights", "no"
         )
         apply_weather_code_weights = False
-        if isinstance(apply_weather_code_weights_str, str) and apply_weather_code_weights_str.lower() == "yes":
+        if (
+            isinstance(apply_weather_code_weights_str, str)
+            and apply_weather_code_weights_str.lower() == "yes"
+        ):
             apply_weather_code_weights = True
 
         model = self.forecast_dict.get("model", "best_match")
@@ -263,7 +307,15 @@ class Forecast(SearchList):
 
         log.debug("params: %s", params)
 
-        return fetch_forecast(self.generator, self.base_url, params, variables, now, hourly_icons_interval, apply_weather_code_weights)
+        return fetch_forecast(
+            self.generator,
+            self.base_url,
+            params,
+            variables,
+            now,
+            hourly_icons_interval,
+            apply_weather_code_weights,
+        )
 
 
 def hash_params(params):
@@ -277,7 +329,15 @@ def hash_params(params):
     ).hexdigest()  # create hash from params
 
 
-def fetch_forecast(generator, base_url, params, variables: list, now: datetime, hourly_icons_interval: int, apply_weather_code_weights: bool):
+def fetch_forecast(
+    generator,
+    base_url,
+    params,
+    variables: list,
+    now: datetime,
+    hourly_icons_interval: int,
+    apply_weather_code_weights: bool,
+):
     global _weather_cache
     log.debug("Current cache state: %s", _weather_cache)
     params_hash = hash_params(params)
@@ -300,7 +360,14 @@ def fetch_forecast(generator, base_url, params, variables: list, now: datetime, 
                 log.debug("Fetched raw data: %s", body)
                 data = json.loads(body)
                 log.debug("Parsed raw data as json: %s", data)
-                remaped_data = remap_data(generator, data, variables, now, hourly_icons_interval, apply_weather_code_weights)
+                remaped_data = remap_data(
+                    generator,
+                    data,
+                    variables,
+                    now,
+                    hourly_icons_interval,
+                    apply_weather_code_weights,
+                )
                 # save to cache and return
                 _weather_cache["params_hash"] = params_hash
                 _weather_cache["data"] = remaped_data
@@ -314,11 +381,20 @@ def fetch_forecast(generator, base_url, params, variables: list, now: datetime, 
                     "An exception occurred while fetching forecast data from api.open-meteo.com. Enable debug in weewx.conf logs for more details."
                 )
                 log.debug(e)
-                return None
+                error_msg = str(e)
+                safe_error_msg = html.escape(error_msg)
+                return {"error": f"{safe_error_msg}"}
     return None
 
 
-def remap_data(generator, data: dict, variables: list, now: datetime, hourly_icons_interval: int, apply_weather_code_weights: bool):
+def remap_data(
+    generator,
+    data: dict,
+    variables: list,
+    now: datetime,
+    hourly_icons_interval: int,
+    apply_weather_code_weights: bool,
+):
     # Using ValueHelper will enable easy converting to correct units set by user in weewx.conf
     def build_value_helper(value, unit, group):
         value_tuple = ValueTuple(value, unit, group)
@@ -346,8 +422,16 @@ def remap_data(generator, data: dict, variables: list, now: datetime, hourly_ico
             if n == 0:
                 # ignore past hours for current day
                 hourly_weather_codes_for_day = hourly_weather_codes[now.hour : 24]
-                log.debug("Current day weather_codes: %s from all available: %s", hourly_weather_codes_for_day, hourly_weather_codes)
-            daily_weather_codes.append(aggregate_daily_icons(hourly_weather_codes_for_day, apply_weather_code_weights))
+                log.debug(
+                    "Current day weather_codes: %s from all available: %s",
+                    hourly_weather_codes_for_day,
+                    hourly_weather_codes,
+                )
+            daily_weather_codes.append(
+                aggregate_daily_icons(
+                    hourly_weather_codes_for_day, apply_weather_code_weights
+                )
+            )
 
         log.debug("Calculated daily weather codes: %s", daily_weather_codes)
 
@@ -363,7 +447,9 @@ def remap_data(generator, data: dict, variables: list, now: datetime, hourly_ico
             dt = build_value_helper(midnight_timestamp, "unix_epoch", "group_time")
             daily_keys = {}
             daily_keys["weather_code"] = daily_weather_codes[i]
-            daily_keys["hourly_weather_codes"] = aggregate_hourly_icons(daily_weather_codes_by_hours[i], hourly_icons_interval)
+            daily_keys["hourly_weather_codes"] = aggregate_hourly_icons(
+                daily_weather_codes_by_hours[i], hourly_icons_interval
+            )
             if "temperature" in variables:
                 daily_keys["temperature"] = {
                     "min": build_value_helper(
@@ -438,6 +524,7 @@ def remap_data(generator, data: dict, variables: list, now: datetime, hourly_ico
         remapped = {
             "daily": daily_list,
             "generated": {"hour": now.hour, "minute": now.minute},
+            "error": None,
         }
         log.debug("Remapped data: %s", remapped)
 
@@ -449,7 +536,9 @@ def remap_data(generator, data: dict, variables: list, now: datetime, hourly_ico
             "Error occured while processing forecast data, cleaning cached data. If this error occure again, please see detailed log below."
         )
         log.error(e)
-    return None
+
+        raise Exception("Error processing forecast data. See logs for more details.")
+
 
 def aggregate_daily_icons(hourly_codes: list, apply_weather_code_weights: bool) -> int:
     """Aggregate hourly weather codes for a day into single weather icon with the most weighted occurrence."""
@@ -457,10 +546,17 @@ def aggregate_daily_icons(hourly_codes: list, apply_weather_code_weights: bool) 
     for code in hourly_codes:
         weight = weather_weights.get(code, 1) if apply_weather_code_weights else 1
         weighted_counts[code] += weight
-    log.debug("Weighted weather codes: %s from all available weather codes: %s", weighted_counts, hourly_codes)
+    log.debug(
+        "Weighted weather codes: %s from all available weather codes: %s",
+        weighted_counts,
+        hourly_codes,
+    )
     max_weight = max(weighted_counts.values())
-    candidates = [val for val, weight in weighted_counts.items() if weight == max_weight]
+    candidates = [
+        val for val, weight in weighted_counts.items() if weight == max_weight
+    ]
     return max(candidates)
+
 
 def aggregate_hourly_icons(hourly_codes: list, interval: int) -> list:
     """Aggregate hourly weather codes into specified interval by choosing the highest code value for each interval."""

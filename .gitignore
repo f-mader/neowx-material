@@ -1,8 +1,14 @@
 .idea
 .vscode/
+.vs/
+__pycache__/
 /dist/skins/neowx-material/
 /dist/*.zip
 /skins/neowx-material/node_modules/
 /neowx-material-latest.zip
+/private/
 /skins/neowx-material/skin.conf.patch
-
+/todo.md
+/.superpowers/
+/.agents/
+/tests/
